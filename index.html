@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How a web crawl works</title>
+<style>
+:root{--bg:#F4F8F8;--card:#FFFFFF;--text:#1F2A30;--muted:#55636B;--line:#B4C2C7;--teal:#0D7A7A;--on-teal:#FFFFFF;--amber:#B87414;--on-amber:#1F1500;--tint:#E3F1F1;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0E1417;--card:#162026;--text:#E6EDF0;--muted:#9DAAB1;--line:#3B4B53;--teal:#46B8B8;--on-teal:#062322;--amber:#E2A545;--on-amber:#1F1500;--tint:#1B2D32;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0E1417;--card:#162026;--text:#E6EDF0;--muted:#9DAAB1;--line:#3B4B53;--teal:#46B8B8;--on-teal:#062322;--amber:#E2A545;--on-amber:#1F1500;--tint:#1B2D32;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+main{max-width:520px;margin:0 auto;padding:20px 16px 32px}
+h1{font-size:1.5rem;line-height:1.2;margin:0 0 6px;letter-spacing:-.01em}
+.lede{color:var(--muted);margin:0 0 14px;max-width:60ch}
+ol.how{margin:0 0 16px;padding:0 0 0 20px;max-width:60ch}
+ol.how li{margin:0 0 4px}
+code{font:0.88em ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--tint);padding:1px 5px;border-radius:4px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+button{min-height:44px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);font:inherit;font-weight:600;cursor:pointer}
+button.primary{background:var(--teal);border-color:var(--teal);color:var(--on-teal)}
+button:disabled{opacity:.45;cursor:default}
+button:focus-visible,input:focus-visible{outline:3px solid var(--teal);outline-offset:2px}
+.limit{display:flex;align-items:center;gap:10px;margin:2px 0 10px;flex-wrap:wrap}
+.limit label{font-weight:600}
+input[type=range]{flex:1;min-width:140px;accent-color:var(--teal);height:32px}
+svg{display:block;width:100%;height:auto}
+.edge{stroke:var(--line);stroke-width:1.5;fill:none}
+.edge.out{stroke-dasharray:4 4}
+.edge.hot{stroke:var(--teal);stroke-width:2.5}
+.n rect{fill:var(--card);stroke:var(--line);stroke-width:1.5}
+.n text{fill:var(--text);font:600 11px system-ui,sans-serif;text-anchor:middle;dominant-baseline:central}
+.n.out rect{stroke-dasharray:4 3}
+.n.out text{fill:var(--muted)}
+.n.queued rect{stroke:var(--amber);stroke-width:2.5}
+.n.cut rect{stroke:var(--amber);stroke-width:2;stroke-dasharray:4 3}
+.n.skipped text{text-decoration:line-through}
+.n.done.real rect{fill:var(--teal);stroke:var(--teal)}
+.n.done.real text{fill:var(--on-teal)}
+.n.done.raw rect{fill:var(--amber);stroke:var(--amber)}
+.n.done.raw text{fill:var(--on-amber)}
+.n.cur rect{stroke:var(--text);stroke-width:3}
+@media (prefers-reduced-motion: no-preference){.n rect,.edge{transition:fill .25s,stroke .25s}.n.cur rect{animation:pulse 1s ease-in-out infinite}}
+@keyframes pulse{50%{stroke-width:5}}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+.stat{background:var(--tint);border-radius:8px;padding:8px 10px}
+.stat b{display:block;font-size:1.25rem;line-height:1.2}
+.stat span{color:var(--muted);font-size:.8rem}
+#log{min-height:3.2em;margin:0 0 8px}
+#result{border-left:4px solid var(--teal);background:var(--tint);padding:10px 12px;border-radius:0 8px 8px 0;margin-top:10px}
+#result[hidden]{display:none}
+#result p{margin:0 0 6px}
+#result p:last-child{margin:0}
+.legend{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin:12px 0 0;padding:0;list-style:none;font-size:.85rem;color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:6px;border:2px solid var(--line)}
+.sw-teal{background:var(--teal);border-color:var(--teal)!important}
+.sw-amber{background:var(--amber);border-color:var(--amber)!important}
+.sw-q{border-color:var(--amber)!important}
+.sw-out{border-style:dashed!important}
+.note{color:var(--muted);font-size:.82rem;margin:14px 0 0;max-width:60ch}
+</style>
+</head>
+<body>
+<main>
+<h1>How a web crawl works</h1>
+<p class="lede">A crawler walks a docs site by following links. Step through a small site and watch what it fetches, what it skips and why the page limit matters.</p>
+<ol class="how">
+<li>Start from one address (<code>start_url</code>).</li>
+<li>Fetch the page and read its links.</li>
+<li>Queue links inside the section (<code>include_urls</code>). Skip the rest.</li>
+<li>Repeat until the queue is empty or the limit (<code>max_pages</code>) is reached.</li>
+</ol>
+<div class="panel">
+<div class="controls">
+<button id="step" class="primary">Step</button>
+<button id="play">Play</button>
+<button id="reset">Reset</button>
+</div>
+<div class="limit"><label for="lim">Crawl limit: <span id="limv">9</span> pages</label><input id="lim" type="range" min="3" max="12" value="9"></div>
+<svg id="map" viewBox="0 0 380 300" role="img" aria-label="A small docs site drawn as boxes joined by lines. The crawler starts at the home page and follows links."></svg>
+<div class="stats">
+<div class="stat"><b id="sFetched">0</b><span>fetched</span></div>
+<div class="stat"><b id="sQueue">0</b><span>waiting in queue</span></div>
+<div class="stat"><b id="sCredits">0</b><span>credits used</span></div>
+</div>
+<p id="log" aria-live="polite">Press Step to start.</p>
+<div id="result" hidden></div>
+<ul class="legend">
+<li><i class="sw-teal"></i>docs page fetched</li>
+<li><i class="sw-amber"></i>raw source file fetched</li>
+<li><i class="sw-q"></i>waiting in queue</li>
+<li><i class="sw-out"></i>outside the section, skipped</li>
+</ul>
+</div>
+<p class="note">Try this: at a limit of 9, the crawl stops before it reaches every docs page, because raw source files (for example <code>.rst.txt</code> copies of a page) take slots. Raise the limit to 12 and every page arrives, but the raw files still cost credits. This is a simplified model of a link following crawl, not Olostep’s internal code.</p>
+</main>
+<script>
+(function(){
+var NODES={
+home:["home",190,44,"real"],blog:["/blog",48,44,"out"],ext:["external",332,44,"out"],
+raw0:["home.rst",344,140,"raw"],start:["start",34,140,"real"],concepts:["concepts",96,140,"real"],
+api:["api",158,140,"real"],cli:["cli",220,140,"real"],faq:["faq",282,140,"real"],
+net:["network",66,250,"real"],rawapi:["api.rst",140,250,"raw"],auth:["auth",212,250,"real"],
+conf:["config",276,250,"real"],rawcli:["cli.rst",340,250,"raw"]};
+var LINKS={home:["raw0","start","concepts","api","cli","faq","blog","ext"],concepts:["net"],api:["rawapi","auth","conf"],cli:["rawcli"]};
+var REAL=Object.keys(NODES).filter(function(k){return NODES[k][3]==="real"}).length;
+var NS="http://www.w3.org/2000/svg",svg=document.getElementById("map"),els={},edges=[];
+function mk(t,a){var e=document.createElementNS(NS,t);for(var k in a)e.setAttribute(k,a[k]);return e}
+Object.keys(LINKS).forEach(function(p){LINKS[p].forEach(function(c){
+ var P=NODES[p],C=NODES[c],o=NODES[c][3]==="out";
+ var e=mk("line",{x1:P[1],y1:P[2]+(C[2]>P[2]?13:0),x2:C[1],y2:C[2]-(C[2]>P[2]?13:0),"class":"edge"+(o?" out":"")});
+ if(C[2]===P[2]){e.setAttribute("x1",P[1]+(C[1]>P[1]?28:-28));e.setAttribute("x2",C[1]+(C[1]>P[1]?-28:28))}
+ svg.appendChild(e);edges.push({p:p,c:c,el:e})})});
+Object.keys(NODES).forEach(function(k){var n=NODES[k];
+ var g=mk("g",{"class":"n "+n[3]});g.appendChild(mk("rect",{x:n[1]-28,y:n[2]-13,width:56,height:26,rx:6}));
+ var t=mk("text",{x:n[1],y:n[2]});t.textContent=n[0];g.appendChild(t);svg.appendChild(g);els[k]=g});
+var $=function(i){return document.getElementById(i)};
+var S,timer=null;
+function init(){S={queue:["home"],seen:{home:1},skipped:{},fetched:[],cur:null,started:false,done:false,hot:[]};
+ $("result").hidden=true;$("log").textContent="Press Step to start.";stop();render()}
+function cls(k){var n=NODES[k],c="n "+n[3];
+ if(n[3]==="out"){if(S.skipped[k])c+=" skipped"}
+ else if(S.fetched.indexOf(k)>-1)c+=" done";
+ else if(S.queue.indexOf(k)>-1)c+=S.done?" cut":" queued";
+ if(S.cur===k)c+=" cur";return c}
+function render(){
+ Object.keys(els).forEach(function(k){els[k].setAttribute("class",cls(k))});
+ edges.forEach(function(e){e.el.setAttribute("class","edge"+(NODES[e.c][3]==="out"?" out":"")+(S.hot.indexOf(e.p+">"+e.c)>-1?" hot":""))});
+ $("sFetched").textContent=S.fetched.length;$("sQueue").textContent=S.done?0:S.queue.length;$("sCredits").textContent=S.fetched.length;
+ $("step").disabled=S.done;if(S.done)stop()}
+function finish(why){S.done=true;S.cur=null;
+ var real=S.fetched.filter(function(k){return NODES[k][3]==="real"}).length,raw=S.fetched.length-real,miss=REAL-real,r=$("result");
+ var p=["<p><b>Found "+real+" of "+REAL+" docs pages.</b> "+raw+" raw source "+(raw===1?"file":"files")+" used a credit each, and "+S.fetched.length+" credits were spent in all.</p>"];
+ if(miss>0)p.push("<p>"+miss+" docs "+(miss===1?"page was":"pages were")+" never fetched, because the limit was reached first. Raise the limit and run it again.</p>");
+ else if(raw>0)p.push("<p>Every docs page was found, but the raw files still cost credits. Excluding that path would save them.</p>");
+ r.innerHTML=p.join("");r.hidden=false;
+ return why==="limit"?" The limit is reached, so the crawl stops.":" The queue is empty, so the crawl is finished."}
+function step(){
+ if(S.done)return;
+ if(!S.started){S.started=true;$("log").textContent="Start: the start address goes into the queue.";render();return}
+ var id=S.queue.shift(),n=NODES[id],ls=LINKS[id]||[],q=0,s=0;S.cur=id;S.fetched.push(id);S.hot=[];
+ ls.forEach(function(l){S.hot.push(id+">"+l);
+  if(NODES[l][3]==="out"){if(!S.seen[l]){S.seen[l]=1;S.skipped[l]=1;s++}}
+  else if(!S.seen[l]){S.seen[l]=1;S.queue.push(l);q++}});
+ var msg="Fetch “"+n[0]+"”. ";
+ msg+=n[3]==="raw"?"This is a raw source file, not a docs page, and it still costs one credit.":
+  (ls.length?"It has "+ls.length+" links: "+q+" new, "+s+" outside the section and skipped.":"It has no further links.");
+ var lim=+$("lim").value,end="";
+ if(!S.queue.length)end=finish("queue");else if(S.fetched.length>=lim)end=finish("limit");
+ $("log").textContent=msg+end;render()}
+function stop(){if(timer){clearInterval(timer);timer=null}$("play").textContent="Play"}
+$("step").onclick=function(){stop();step()};
+$("play").onclick=function(){if(S.done)init();if(timer){stop();return}$("play").textContent="Pause";step();timer=setInterval(step,1000)};
+$("reset").onclick=init;
+$("lim").oninput=function(){$("limv").textContent=this.value;init()};
+init();
+})();
+</script>
+</body>
+</html>
